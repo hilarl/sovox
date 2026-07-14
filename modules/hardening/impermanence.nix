@@ -29,9 +29,17 @@ lib.mkIf config.sovox.internal.impermanence.enable {
     hideMounts = true;
     files = [
       "/etc/machine-id"
+      # Persist the host-key files individually, not the whole /etc/ssh:
+      # bind-mounting the directory shadows the sshd_config symlink that
+      # environment.etc places there, and sshd then fails to start
+      # ("/etc/ssh/sshd_config: No such file or directory"). The boot test
+      # asserts these survive reboot.
+      "/etc/ssh/ssh_host_ed25519_key"
+      "/etc/ssh/ssh_host_ed25519_key.pub"
+      "/etc/ssh/ssh_host_rsa_key"
+      "/etc/ssh/ssh_host_rsa_key.pub"
     ];
     directories = [
-      "/etc/ssh" # host keys — the boot test asserts these survive reboot
       "/var/lib/nixos"
       "/var/lib/systemd"
       "/var/log"
