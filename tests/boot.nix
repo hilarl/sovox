@@ -26,6 +26,12 @@ runTest ({ lib, pkgs, ... }: {
     sovox.internal.impermanence.enable = true;
     sovox.updates.healthGrace = 3600; # watchdog must not fire mid-test
 
+    # The host /nix/store is mounted over 9p here (mountHostNixStore), which
+    # cannot be chowned; register-nix-paths then fails and the health gate
+    # (rightly) counts it as a failed unit. It is meaningless in a VM whose
+    # store is the host's — mask it so the gate sees a genuinely healthy boot.
+    systemd.services.register-nix-paths.enable = lib.mkForce false;
+
     # QEMU virtio disks have no /dev/disk/by-id symlinks, so the default
     # devNodes scan finds no pool ("cannot import 'rpool': no such pool
     # available"). Scan by-uuid instead, as nixpkgs' own ZFS tests do.
