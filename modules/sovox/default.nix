@@ -1,14 +1,15 @@
 # Option namespace root: `sovox.*`.
 #
-# The namespace mirrors the sovox.toml schema keys (Operator Docs §3) verbatim,
-# so the v0.1 sovoxd intent compiler lands into prepared slots. Only what the
-# prototype needs is wired to real config; the rest is typed but inert.
+# The namespace mirrors the sovox.toml schema keys (Operator Docs §3)
+# verbatim. render.nix writes this tree to /etc/sovox/sovox.toml — the
+# intent file sovoxd parses and serves back — and intent.nix is the
+# inverse (an intent file becomes these option settings).
 { config, lib, ... }:
 let
   cfg = config.sovox;
 in
 {
-  imports = [ ./edition.nix ./updates.nix ];
+  imports = [ ./edition.nix ./updates.nix ./render.nix ];
 
   options.sovox = {
     # ── Internal plumbing (not part of the sovox.toml surface) ────────────
@@ -117,12 +118,13 @@ in
       };
     };
 
-    # ── [backup] (typed, unwired) ─────────────────────────────────────────
+    # ── [backup] ──────────────────────────────────────────────────────────
     backup = {
       snapshots = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "[backup].snapshots.";
+        type = lib.types.str;
+        default = "";
+        example = "hourly=24,daily=14,weekly=8";
+        description = "[backup].snapshots — retention policy for scheduled ZFS snapshots of rpool/safe (Operator Docs §3). Empty disables scheduling.";
       };
       send_target = lib.mkOption {
         type = lib.types.str;

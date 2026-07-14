@@ -68,7 +68,7 @@ in
       wantedBy = [ "multi-user.target" ];
       # A staged generation swaps the rendered intent file; the daemon re-reads
       # it per request, but restart on switch keeps /status uptime honest.
-      restartTriggers = [ config.environment.etc."sovox/sovox.toml".source or null ];
+      restartTriggers = [ config.environment.etc."sovox/sovox.toml".source ];
       serviceConfig = {
         ExecStart = "${sovoxd}/bin/sovoxd --socket ${socketPath} --config ${configPath}";
         RuntimeDirectory = "sovoxd";
