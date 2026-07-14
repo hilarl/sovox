@@ -44,8 +44,23 @@ runTest ({ lib, nodes, pkgs, ... }: {
   };
 
   testScript = ''
+    import re
+    import time
+
     good = "${nodes.machine.system.build.toplevel}"
     bad = "${nodes.poisoned.system.build.toplevel}"
+
+
+    def wait_console_count(pattern, count, timeout):
+        """Wait until `pattern` has appeared `count` times on the serial
+        console (since the last machine.start). Non-consuming, unlike
+        wait_for_console_text, whose queue reader in this driver version
+        keeps up with at most one console line per second."""
+        deadline = time.time() + timeout
+        while len(re.findall(pattern, machine.get_console_log())) < count:
+            if time.time() > deadline:
+                raise Exception(f"timed out waiting for {count}x {pattern!r} on console")
+            time.sleep(1)
 
     machine.start()
 
@@ -72,10 +87,9 @@ runTest ({ lib, nodes, pkgs, ... }: {
         # may span this window; the counted attempts are observed on the
         # serial console instead. B gets tries=2 attempts, each reaching
         # multi-user and then rebooted by the watchdog after healthGrace.
-        machine.wait_for_console_text("reboot: (Restarting system|machine restart)", timeout=300)
-        machine.wait_for_console_text("reboot: (Restarting system|machine restart)", timeout=300)
-        # Counter exhausted: the next boot to reach multi-user is A.
-        machine.wait_for_console_text("Reached target .*Multi-User System", timeout=300)
+        wait_console_count(r"reboot: machine restart", 2, timeout=300)
+        # Counter exhausted: the third boot to reach multi-user is A.
+        wait_console_count(r"Reached target Multi-User System", 3, timeout=300)
         # Reconnect the shell. The throwaway command drains the stale
         # backdoor ready-markers queued in the socket during B's boots.
         machine.connected = False
