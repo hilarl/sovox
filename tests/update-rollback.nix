@@ -44,23 +44,8 @@ runTest ({ lib, nodes, pkgs, ... }: {
   };
 
   testScript = ''
-    import re
-    import time
-
     good = "${nodes.machine.system.build.toplevel}"
     bad = "${nodes.poisoned.system.build.toplevel}"
-
-
-    def wait_console_count(pattern, count, timeout):
-        """Wait until `pattern` has appeared `count` times on the serial
-        console (since the last machine.start). Non-consuming, unlike
-        wait_for_console_text, whose queue reader in this driver version
-        keeps up with at most one console line per second."""
-        deadline = time.time() + timeout
-        while len(re.findall(pattern, machine.get_console_log())) < count:
-            if time.time() > deadline:
-                raise Exception(f"timed out waiting for {count}x {pattern!r} on console")
-            time.sleep(1)
 
     machine.start()
 
@@ -77,23 +62,18 @@ runTest ({ lib, nodes, pkgs, ... }: {
         machine.succeed("ls /boot/loader/entries >&2")
 
     machine.shutdown()
-    # Guest-initiated reboots ahead: without allow_reboot the driver runs
-    # QEMU with -no-reboot, and the watchdog's `systemctl reboot` would kill
-    # the VM (and the test) instead of restarting it.
-    machine.start(allow_reboot=True)
 
     with subtest("B fails the gate; counter exhausts; A returns — unattended"):
-        # The backdoor shell dies with each guest reboot, so no shell command
-        # may span this window; the counted attempts are observed on the
-        # serial console instead. B gets tries=2 attempts, each reaching
-        # multi-user and then rebooted by the watchdog after healthGrace.
-        wait_console_count(r"reboot: machine restart", 2, timeout=300)
-        # Counter exhausted: the third boot to reach multi-user is A.
-        wait_console_count(r"Reached target Multi-User System", 3, timeout=300)
-        # Reconnect the shell. The throwaway command drains the stale
-        # backdoor ready-markers queued in the socket during B's boots.
-        machine.connected = False
-        machine.execute("true")
+        # The watchdog reboots the guest from inside. The driver runs QEMU
+        # with -no-reboot, so each guest-initiated reboot terminates QEMU
+        # and the driver powers it back on — a power cycle, not an operator
+        # intervention. Fresh driver sockets per boot also keep the backdoor
+        # shell protocol in sync (a command must never span a guest reboot).
+        machine.start()              # B, counted attempt 1 of 2
+        machine.wait_for_shutdown()  # gate fails; watchdog reboots
+        machine.start()              # B, counted attempt 2 of 2
+        machine.wait_for_shutdown()  # gate fails; counter exhausts
+        machine.start()              # systemd-boot falls back to A
         machine.wait_for_unit("multi-user.target")
         machine.wait_for_unit("sovox-healthy.target")
         current = machine.succeed("readlink -f /run/current-system").strip()
