@@ -46,22 +46,33 @@ expensive to fake — true, testable, and CI-enforced from the first commit:
 Also here, in service of those claims:
 
 - **Hardened network baseline** — default-deny inbound firewall; the node
-  port (9000) is the only service exposed.
+  port (9000) is the only service exposed. An optional WireGuard admin mesh
+  (`sovox.network.mesh`) closes WAN SSH and carries SSH and Cockpit over the
+  tunnel instead — a VM test proves both postures.
 - **Impermanence** — the root filesystem resets to a blank ZFS snapshot on
   every boot; only an explicit allowlist (host keys, machine identity, logs,
   node state) persists. Configuration drift is structurally impossible.
 - **Encrypted installs** — the installer ISO partitions with LUKS2 + ZFS
   from declarative disk plans (`single-zfs`, `mirror-zfs`) and installs
   offline from its embedded store.
-- **`sovoxd-stub`** — a dependency-free Rust daemon answering
-  `/health` and `/version` on a Unix socket: the seed of `sovoxd`, and the
-  thing the boot health gate interrogates.
+- **`sovoxd`** — a dependency-free Rust daemon on a Unix socket: it parses
+  the rendered `/etc/sovox/sovox.toml` and answers `/health`, `/version`,
+  `/status`, `/config`, and `/roles`. The boot health gate interrogates it;
+  an unparseable config is a health failure.
+- **Declarative intent** — the full `sovox.*` option tree renders to
+  `/etc/sovox/sovox.toml`, and an operator intent file compiles back into a
+  system via `nix run .#install -- --intent ./sovox.toml` (impure
+  evaluation; caveat stated plainly in `fleet/README.md`). A pure-eval check
+  asserts the render → parse round-trip is lossless.
 - **Fleet path** — `nix run .#install` provisions a remote machine over SSH
   via nixos-anywhere.
 
-Not here yet (v0.1+): the Tenzro node is packaged but disabled by default,
-roles (`ai`, `storage`, `validator`, …) are typed placeholders, there is no
-first-boot wizard, and secure-boot signing is scaffolded but unenrolled.
+Not here yet (v0.1+), stated plainly: upstream Tenzro has no release to pin,
+so enabling `sovox.tenzro.enable` fails loudly and declared roles (`ai`,
+`storage`, `validator`, …) render into config and unit definitions but run
+no binary; there is no first-boot wizard; secure-boot signing is scaffolded
+but unenrolled; auto-updates need an explicitly named flake source and an
+unsigned channel — the signed manifest pipeline is sovoxd work.
 
 ## Layout
 
@@ -70,9 +81,9 @@ flake.nix          entrypoint: packages, modules, images, checks
 modules/           sovox.* option namespace, hardening, roles, tenzro, desktop
 examples/          minimal server / desktop / mirrored-server host configs
 images/            installer ISO, raw disk image, disko presets (single-zfs, mirror-zfs)
-packages/          sovoxd-stub — health/version daemon, seed of sovoxd
-fleet/             nixos-anywhere profile (`nix run .#install`)
-tests/             boot/impermanence, edition-switch, update-rollback VM tests
+packages/          sovoxd — the node daemon (health gate, config, status)
+fleet/             nixos-anywhere profile (`nix run .#install`, `--intent`)
+tests/             boot/impermanence, mesh, edition-switch, update-rollback, intent-eval
 docs/              the published docs suite (the contract this repo conforms to)
 scripts/           build-iso.sh, repro-check.sh
 ```
@@ -82,7 +93,7 @@ scripts/           build-iso.sh, repro-check.sh
 Requires Nix with flakes; the VM tests need Linux/KVM.
 
 ```sh
-nix flake check                 # evaluates all configs, runs the three VM tests
+nix flake check                 # evaluates all configs, runs the four VM tests
 nix build .#iso                 # Sovox Server installer ISO (offline-capable)
 nix build .#raw                 # preinstalled raw image (dev/CI only)
 nix run .#install -- --target root@host --plan single-zfs   # fleet install
