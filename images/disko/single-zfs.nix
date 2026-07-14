@@ -3,7 +3,11 @@
 #   rpool/local/root   ← rolled back to @blank every boot (impermanence)
 #   rpool/local/nix    ← the closure; content-addressed
 #   rpool/safe/state   ← declared persistent state (mounted at /persist)
-#   rpool/safe/secrets ← sops-nix material (prototype: placeholder dataset)
+#   rpool/safe/secrets ← reserved for operator secret material. No secrets
+#                        manager ships in v0.0.x because nothing consumes
+#                        one: the only machine secret (the mesh key) is
+#                        generated at runtime under /var/lib/sovox, never
+#                        provisioned. Tooling arrives with its first consumer.
 #
 # Dual-use file: imported as a NixOS module (examples/, `device` defaults)
 # and consumed by the disko CLI from the installer ISO

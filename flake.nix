@@ -34,6 +34,14 @@
         specialArgs = { inherit inputs; };
         modules = [ self.nixosModules.sovox ] ++ modules;
       };
+
+      # `--intent`: an operator intent file becomes option settings
+      # (modules/sovox/intent.nix). The env indirection needs impure
+      # evaluation (the install script passes `--option pure-eval false`);
+      # under pure eval getEnv is "" and the attrs below don't exist, so
+      # `nix flake check` never sees them.
+      intentPath = builtins.getEnv "SOVOX_INTENT";
+      intentModule = (import ./modules/sovox/intent.nix).fromIntent intentPath;
     in
     {
       nixosModules.sovox = { imports = [ ./modules ]; };
@@ -44,6 +52,11 @@
         # Fleet target for `nix run .#install -- --plan mirror-zfs`
         # (Operator Docs §1.2; same server profile, mirror-zfs layout).
         server-mirror-example = mkSovox [ ./examples/server-mirror.nix ];
+      } // lib.optionalAttrs (intentPath != "") {
+        # Install targets for `--intent`: the example plan plus the
+        # operator's intent file (which wins over example defaults).
+        intent = mkSovox [ ./examples/server.nix intentModule ];
+        intent-mirror = mkSovox [ ./examples/server-mirror.nix intentModule ];
       };
 
       packages.${system} = {
@@ -68,6 +81,7 @@
         boot = import ./tests/boot.nix { inherit inputs system; };
         edition-switch = import ./tests/edition-switch.nix { inherit inputs system; };
         update-rollback = import ./tests/update-rollback.nix { inherit inputs system; };
+        intent-eval = import ./tests/intent-eval.nix { inherit inputs system; };
       };
     };
 }

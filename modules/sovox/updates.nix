@@ -14,24 +14,58 @@ let
   sovoxd = pkgs.callPackage ../../packages/sovoxd { };
   socketPath = "/run/sovoxd/sovoxd.sock";
   configPath = "/etc/sovox/sovox.toml";
+
+  # [updates].window: "HH:MM-HH:MM" local time (Operator Docs §3). The timer
+  # fires at the window start with a randomized delay spanning the window,
+  # so a fleet on the same intent does not update in lockstep. Empty window
+  # means the docs default, 02:00-05:00.
+  window = if cfg.window == "" then "02:00-05:00" else cfg.window;
+  windowValid =
+    builtins.match "[0-9]{2}:[0-9]{2}-[0-9]{2}:[0-9]{2}" window != null;
+  # Fall back to the default window when invalid so the assertion below is
+  # what fails, not an arithmetic throw inside the timer definition.
+  windowStart = if windowValid then lib.elemAt (lib.splitString "-" window) 0 else "02:00";
+  windowEnd = if windowValid then lib.elemAt (lib.splitString "-" window) 1 else "05:00";
+  toMinutes = t:
+    let p = lib.splitString ":" t;
+    in lib.toInt (lib.elemAt p 0) * 60 + lib.toInt (lib.elemAt p 1);
+  # Window spans past midnight when end < start.
+  windowSpanSec =
+    let s = toMinutes windowStart; e = toMinutes windowEnd;
+    in 60 * (if e > s then e - s else e + 1440 - s);
+
+  updateActive = cfg.auto && config.sovox.internal.updates.source != null;
 in
 {
+  options.sovox.internal.updates.source = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    example = "github:hilarl/sovox";
+    description = ''
+      Flake reference the unattended updater rebuilds from. Internal knob:
+      the signed channel manifest and ring resolution are sovoxd work
+      (v0.1); until then the operator names the source explicitly.
+      [updates].auto without a source warns and stays inert.
+    '';
+  };
+
   options.sovox.updates = {
-    # ── [updates] sovox.toml mirror (typed; sovoxd compiles these in v0.1) ─
+    # ── [updates] sovox.toml mirror ────────────────────────────────────────
     auto = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "[updates].auto — unattended update polling (v0.1).";
+      description = "[updates].auto — unattended staged updates inside the maintenance window. Needs sovox.internal.updates.source.";
     };
     window = lib.mkOption {
       type = lib.types.str;
       default = "";
-      description = "[updates].window — maintenance window, epoch-aware scheduling (v0.1).";
+      example = "02:00-05:00";
+      description = "[updates].window — local-time maintenance window \"HH:MM-HH:MM\". Empty means 02:00-05:00. Epoch-aware deferral is v0.1.";
     };
     download_only = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "[updates].download_only.";
+      description = "[updates].download_only — build/fetch the new closure but neither stage nor reboot.";
     };
 
     # ── Prototype health-gate knobs ────────────────────────────────────────
@@ -162,6 +196,64 @@ in
           systemctl reboot
         fi
       '';
+    };
+
+    # ── Unattended updates: stage, reboot into the gate ───────────────────
+    # `nixos-rebuild boot` against the named source; if a new generation was
+    # staged (and not download_only), reboot into it. The boot counter and
+    # the health gate above make a bad update self-correcting — this timer
+    # adds no safety logic of its own, by design.
+    assertions = [{
+      assertion = windowValid;
+      message = ''
+        sovox.updates.window must be "HH:MM-HH:MM" (local time), e.g.
+        "02:00-05:00" — got "${cfg.window}".
+      '';
+    }];
+
+    warnings = lib.optional (cfg.auto && config.sovox.internal.updates.source == null)
+      ("sovox.updates.auto = true but sovox.internal.updates.source is unset "
+        + "— the update timer is inert. Name the flake to rebuild from, or "
+        + "disable auto.");
+
+    systemd.services.sovox-update = lib.mkIf updateActive {
+      description = "Sovox staged update";
+      # Never race the boot health gate: only update on an already-blessed boot.
+      after = [ "network-online.target" "boot-complete.target" ];
+      wants = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        StateDirectory = "sovox-update";
+        WorkingDirectory = "/var/lib/sovox-update";
+      };
+      path = [ pkgs.nixos-rebuild pkgs.git config.nix.package config.systemd.package ];
+      script = ''
+        current="$(readlink -f /run/current-system)"
+
+        ${if cfg.download_only then ''
+        # download_only: fetch/build the closure so the window's work is
+        # done, but neither stage a boot entry nor reboot.
+        nixos-rebuild build --flake ${lib.escapeShellArg config.sovox.internal.updates.source}
+        '' else ''
+        nixos-rebuild boot --flake ${lib.escapeShellArg config.sovox.internal.updates.source}
+        staged="$(readlink -f /nix/var/nix/profiles/system)"
+        if [ "$staged" != "$current" ]; then
+          echo "sovox-update: staged $staged (running $current); rebooting into the health gate" \
+            | systemd-cat -t sovox
+          systemctl reboot
+        fi
+        ''}
+      '';
+    };
+
+    systemd.timers.sovox-update = lib.mkIf updateActive {
+      description = "Sovox maintenance-window update timer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "*-*-* ${windowStart}:00";
+        RandomizedDelaySec = windowSpanSec;
+        Persistent = true;
+      };
     };
   };
 }

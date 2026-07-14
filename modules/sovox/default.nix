@@ -9,7 +9,14 @@ let
   cfg = config.sovox;
 in
 {
-  imports = [ ./edition.nix ./updates.nix ./render.nix ./mesh.nix ];
+  imports = [
+    ./edition.nix
+    ./updates.nix
+    ./render.nix
+    ./mesh.nix
+    ./observability.nix
+    ./backup.nix
+  ];
 
   options.sovox = {
     # ── Internal plumbing (not part of the sovox.toml surface) ────────────
@@ -152,5 +159,22 @@ in
   config = {
     networking.hostName = cfg.node.name;
     time.timeZone = cfg.node.timezone;
+
+    assertions = [{
+      assertion = !cfg.network.expose.rpc && !cfg.network.expose.mcp && !cfg.network.expose.a2a;
+      message = ''
+        [network.expose]: exposing rpc/mcp/a2a promises a TLS+auth reverse
+        proxy in front of the loopback surfaces (Operator Docs §3). No such
+        proxy exists in v0.0.x, and silently ignoring the flag would claim a
+        posture the node does not have. Keep expose flags false until the
+        proxy lands (v0.1).
+      '';
+    }];
+
+    warnings = lib.optional (cfg.identity.key_backend != "software")
+      ("sovox.identity: key_backend \"${cfg.identity.key_backend}\" is "
+        + "recorded in the intent file, but key sealing arrives with the "
+        + "identity agent (docs/03-ARCHITECTURE.md §4.4) — the v0.0.x "
+        + "keystore is software-backed regardless.");
   };
 }

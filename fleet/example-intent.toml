@@ -1,0 +1,30 @@
+# Example intent file for `nix run .#install -- --intent ./sovox.toml`
+# (Operator Docs §3). Only keys you set are applied; everything else keeps
+# its option default. Stays inside the TOML subset sovoxd parses: table
+# headers, strings, booleans, integers, string arrays.
+[node]
+name = "intent-example"
+edition = "server"
+ring = "stable"
+timezone = "UTC"
+
+[network]
+mesh = false
+ipv6 = true
+
+[roles]
+enabled = ["ai", "storage"]
+
+[roles.ai]
+profile = "native"
+max_vram_percent = 90
+
+[roles.storage]
+capacity = "2TB"
+
+[updates]
+auto = false
+window = "02:00-05:00"
+
+[backup]
+snapshots = "hourly=24,daily=14,weekly=8"
