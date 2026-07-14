@@ -58,9 +58,13 @@ in
 
     # systemd-bless-boot(-generator) come from upstream systemd; the counted
     # entry is only marked good once boot-complete.target is reached.
-    # boot-complete.target is a passive target: pull it into every boot so a
-    # healthy system activates it and the watchdog can trust its absence.
-    systemd.targets.boot-complete.wantedBy = [ "multi-user.target" ];
+    #
+    # boot-complete.target is passive and must NOT be wanted by
+    # multi-user.target: target units auto-order After= their Wants=, and the
+    # health gate is After=multi-user.target + Before=boot-complete.target —
+    # that would be an ordering cycle systemd breaks by deleting the gate's
+    # job. The rollback watchdog pulls the target in instead (service Wants=
+    # carries no ordering), so every boot still activates it when healthy.
 
     # ── sovoxd: health gate, node status, intent introspection (Arch §4.5) ─
     systemd.services.sovoxd = {
@@ -127,11 +131,12 @@ in
       '';
     };
 
+    # Same cycle rule as boot-complete.target: pulled in by the watchdog,
+    # never by multi-user.target.
     systemd.targets.sovox-healthy = {
       description = "Sovox node is healthy";
       requires = [ "sovox-health-check.service" ];
       after = [ "sovox-health-check.service" ];
-      wantedBy = [ "multi-user.target" ];
     };
 
     # ── Watchdog: makes "zero human interventions" literal ────────────────
@@ -141,6 +146,7 @@ in
       description = "Reboot if the boot health gate is not reached";
       wantedBy = [ "multi-user.target" ];
       after = [ "multi-user.target" ];
+      wants = [ "boot-complete.target" "sovox-healthy.target" ];
       serviceConfig = {
         Type = "oneshot";
         TimeoutStartSec = "infinity";
