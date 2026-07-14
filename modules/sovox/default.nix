@@ -9,7 +9,7 @@ let
   cfg = config.sovox;
 in
 {
-  imports = [ ./edition.nix ./updates.nix ./render.nix ];
+  imports = [ ./edition.nix ./updates.nix ./render.nix ./mesh.nix ];
 
   options.sovox = {
     # ── Internal plumbing (not part of the sovox.toml surface) ────────────
@@ -27,7 +27,18 @@ in
         type = lib.types.str;
         default = "sovox-mesh";
         readOnly = true;
-        description = "Reserved WireGuard admin-mesh interface name (lands v0.1).";
+        description = "WireGuard admin-mesh interface name (modules/sovox/mesh.nix).";
+      };
+
+      extraInputRules = lib.mkOption {
+        type = lib.types.lines;
+        default = "";
+        description = ''
+          nftables rules spliced verbatim into the sovox input chain by
+          hardening/base.nix, after the baseline-port rules. Internal knob
+          for modules (mesh, observability) — not part of the sovox.toml
+          surface, and checkRuleset still validates the result at build time.
+        '';
       };
 
       impermanence.enable = lib.mkOption {
@@ -66,7 +77,11 @@ in
       mesh = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "[network].mesh — WireGuard admin mesh (v0.1).";
+        description = ''
+          [network].mesh — WireGuard admin mesh. Enabling it closes WAN SSH
+          on the standard profile (admin surfaces move inside the tunnel);
+          addresses and peers live under sovox.internal.mesh.*.
+        '';
       };
       ipv6 = lib.mkOption {
         type = lib.types.bool;

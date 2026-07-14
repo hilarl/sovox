@@ -32,12 +32,16 @@ in
         udp dport ${portSet} accept
         ''}
 
-        ${lib.optionalString (config.sovox.profile == "standard") ''
-        # PROTOTYPE ONLY: SSH reachable on all interfaces in the
-        # "standard" profile. Tracked issue: move behind the WireGuard admin
-        # mesh (`sovox mesh`, v0.1); "hardened" already excludes this rule.
+        ${lib.optionalString (config.sovox.profile == "standard" && !config.sovox.network.mesh) ''
+        # Fallback SSH posture: standard profile with the mesh off keeps 22
+        # open on all interfaces so a fresh nixos-anywhere install stays
+        # reachable. Enabling [network].mesh removes this rule — SSH then
+        # rides the mesh interface only (modules/sovox/mesh.nix). The
+        # hardened profile never gets it.
         tcp dport 22 accept
         ''}
+
+        ${config.sovox.internal.extraInputRules}
       }
 
       chain forward {
