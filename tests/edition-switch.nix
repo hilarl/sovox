@@ -14,6 +14,14 @@ let
   serverCfg = inputs.self.nixosConfigurations.server-example.config;
   desktopCfg = inputs.self.nixosConfigurations.desktop-example.config;
 
+  # Round-trip: the rendered intent file (render.nix), parsed back through
+  # intent.nix, must reproduce the option values it came from. Reading the
+  # rendered derivation is import-from-derivation — deliberate: the check
+  # exercises the real serializer output, not a copy of its input.
+  roundTrip = ((import ../modules/sovox/intent.nix).fromTable
+    (builtins.fromTOML (builtins.readFile
+      serverCfg.environment.etc."sovox/sovox.toml".source))).sovox;
+
   # (a) + (b): evaluation-time invariants over the published example configs.
   parity =
     assert lib.assertMsg
@@ -35,6 +43,26 @@ let
     assert lib.assertMsg
       (serverCfg.sovox.edition == "server" && desktopCfg.sovox.edition == "desktop")
       "example configs do not cover both editions";
+    assert lib.assertMsg
+      (roundTrip.node.name == serverCfg.sovox.node.name
+        && roundTrip.edition == serverCfg.sovox.edition
+        && roundTrip.node.ring == serverCfg.sovox.node.ring)
+      "render → parse round-trip mangles [node]";
+    assert lib.assertMsg
+      (roundTrip.network.ipv6 == serverCfg.sovox.network.ipv6
+        && roundTrip.network.mesh == serverCfg.sovox.network.mesh
+        && roundTrip.network.expose.rpc == serverCfg.sovox.network.expose.rpc)
+      "render → parse round-trip mangles [network]";
+    assert lib.assertMsg
+      (roundTrip.roles.enabled == serverCfg.sovox.roles.enabled
+        && roundTrip.roles.tee.enable == serverCfg.sovox.roles.tee.enable
+        && roundTrip.roles.ai.max_vram_percent == serverCfg.sovox.roles.ai.max_vram_percent)
+      "render → parse round-trip mangles [roles] (tee enabled↔enable mapping?)";
+    assert lib.assertMsg
+      (roundTrip.updates.auto == serverCfg.sovox.updates.auto
+        && roundTrip.backup.snapshots == serverCfg.sovox.backup.snapshots
+        && roundTrip.identity.key_backend == serverCfg.sovox.identity.key_backend)
+      "render → parse round-trip mangles [updates]/[backup]/[identity]";
     "parity-ok";
 in
 runTest ({ pkgs, ... }: {

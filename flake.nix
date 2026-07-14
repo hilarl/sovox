@@ -79,6 +79,7 @@
 
       checks.${system} = {
         boot = import ./tests/boot.nix { inherit inputs system; };
+        mesh = import ./tests/mesh.nix { inherit inputs system; };
         edition-switch = import ./tests/edition-switch.nix { inherit inputs system; };
         update-rollback = import ./tests/update-rollback.nix { inherit inputs system; };
         intent-eval = import ./tests/intent-eval.nix { inherit inputs system; };

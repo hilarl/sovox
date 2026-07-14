@@ -7,8 +7,9 @@
 #    (raw-image boot smoke is a tracked issue, fleet/README.md).
 #  - LUKS is dropped in the test VM only: interactive unlock in a VM test
 #    proves nothing about impermanence.
-#  - Port 22 answers in addition to 9000 — the documented prototype exception
-#    (standard profile, modules/hardening/base.nix); "hardened" removes it.
+#  - Port 22 answers in addition to 9000 — the documented fallback posture
+#    (standard profile with the mesh off, modules/hardening/base.nix);
+#    tests/mesh.nix proves the mesh-on posture where WAN 22 is dropped.
 { inputs, system }:
 let
   inherit (import ./lib.nix { inherit inputs system; }) runTest vmBase;
@@ -20,6 +21,7 @@ runTest ({ lib, pkgs, ... }: {
     imports = [ vmBase ];
     sovox.node.name = "server";
     sovox.edition = "server";
+    environment.systemPackages = [ pkgs.curl ];
     # The point of this test: the real ZFS impermanence chain.
     sovox.internal.impermanence.enable = true;
     sovox.updates.healthGrace = 3600; # watchdog must not fire mid-test
@@ -100,6 +102,18 @@ runTest ({ lib, pkgs, ... }: {
         server.wait_for_unit("sovox-healthy.target")
         server.wait_for_unit("boot-complete.target")
 
+    with subtest("intent file rendered and served back by sovoxd"):
+        server.succeed("test -f /etc/sovox/sovox.toml")
+        status = server.succeed(
+            "curl --silent --fail --unix-socket /run/sovoxd/sovoxd.sock http://localhost/status"
+        )
+        assert '"edition":"server"' in status, f"unexpected /status: {status}"
+        assert '"node":"server"' in status, f"unexpected /status: {status}"
+        config = server.succeed(
+            "curl --silent --fail --unix-socket /run/sovoxd/sovoxd.sock http://localhost/config"
+        )
+        assert '"loaded":true' in config, f"/config did not parse: {config}"
+
     with subtest("host key persists, root file does not"):
         server.wait_for_unit("sshd.service")
         hostkey = server.succeed("cat /etc/ssh/ssh_host_ed25519_key.pub")
@@ -115,10 +129,11 @@ runTest ({ lib, pkgs, ... }: {
         hostkey2 = server.succeed("cat /etc/ssh/ssh_host_ed25519_key.pub")
         assert hostkey == hostkey2, "SSH host key changed across reboot"
 
-    with subtest("network posture: default-deny, 9000 allowed, 22 prototype exception"):
+    with subtest("network posture: default-deny, 9000 allowed, 22 fallback posture"):
         probe.wait_for_unit("multi-user.target")
         server.succeed("nft list ruleset | grep -q 'policy drop'")
-        # 22: reachable (prototype exception, modules/hardening/base.nix)
+        # 22: reachable — fallback posture, standard profile with the mesh
+        # off (modules/hardening/base.nix); tests/mesh.nix proves the flip
         probe.succeed("nc -z server 22")
         # 9000: firewall passes it — connection refused (rc 1), not filtered
         probe.succeed("rc=0; timeout 3 nc -z server 9000 || rc=$?; test $rc -eq 1")
