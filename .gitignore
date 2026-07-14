@@ -1,0 +1,35 @@
+# build outputs
+result
+result-*
+target/
+*.iso
+*.img
+*.qcow2
+*.raw
+
+# secrets and key material — never commit
+.env
+.env.*
+*.pem
+*.key
+*.age
+secrets/
+disko-password
+
+# internal planning and private working notes — the public repo carries
+# only the published docs suite (docs/)
+SOVOX-PROTOTYPE-SPEC*.md
+*-INTERNAL*.md
+notes/
+plans/
+scratch/
+
+# local tooling and editor state
+.DS_Store
+.direnv/
+.envrc
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.vscode/
+.idea/

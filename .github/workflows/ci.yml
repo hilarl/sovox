@@ -1,0 +1,99 @@
+# CI: three jobs — flake check, ISO build (artifact retained), and
+# repro-check across two independent runners. The repro job is a required
+# check from day one; retrofitting reproducibility is how projects lose it.
+name: ci
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-check-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-check-${{ runner.os }}-
+      # ubuntu-latest runners expose /dev/kvm: the VM tests run natively.
+      - run: nix flake check -L
+
+  iso:
+    name: build installer ISO
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-iso-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-iso-${{ runner.os }}-
+      - run: nix build .#iso --out-link result-iso -L
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sovox-server-iso
+          path: result-iso/iso/*.iso
+          retention-days: 14
+
+  # Two runners build the same toplevel with NO shared cache; a third job
+  # compares closure hashes. Comparing the toplevel (not the ISO) halves the
+  # load without weakening the claim — the ISO embeds this closure.
+  repro:
+    name: repro build ${{ matrix.build }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build: [ 1, 2 ]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - name: build server toplevel
+        run: |
+          out=$(nix build .#nixosConfigurations.server-example.config.system.build.toplevel \
+            --no-link --print-out-paths -L)
+          nix path-info --json "$out" > "path-info-${{ matrix.build }}.json"
+          echo "$out" > "out-path-${{ matrix.build }}.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: repro-${{ matrix.build }}
+          path: |
+            path-info-${{ matrix.build }}.json
+            out-path-${{ matrix.build }}.txt
+
+  repro-check:
+    name: repro-check (reproducibility gate)
+    runs-on: ubuntu-latest
+    needs: repro
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: repro-*
+          merge-multiple: true
+      - name: compare closure hashes
+        run: |
+          set -euo pipefail
+          for f in path-info-1.json path-info-2.json; do
+            jq -r 'if type == "object" then to_entries[].value.narHash else .[].narHash end' "$f" | sort > "${f%.json}.hashes"
+          done
+          if ! diff -u path-info-1.hashes path-info-2.hashes; then
+            echo "REPRO-CHECK FAILED: closure hashes differ — builds are not reproducible" >&2
+            exit 1
+          fi
+          diff -u out-path-1.txt out-path-2.txt
+          echo "repro-check OK: closure-identical builds on independent runners"
