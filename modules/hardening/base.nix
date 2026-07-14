@@ -74,7 +74,7 @@ in
   };
 
   # systemd-wide defaults; per-unit hardening lives with each unit
-  # (tenzro-node: docs/03-ARCHITECTURE.md §6; sovoxd-stub: modules/sovox/updates.nix).
+  # (tenzro-node: docs/03-ARCHITECTURE.md §6; sovoxd: modules/sovox/updates.nix).
   systemd.coredump.enable = false;
 
   security.sudo.execWheelOnly = true;

@@ -53,8 +53,10 @@
         raw = (self.nixosConfigurations.server-example.extendModules {
           modules = [{ disko.testMode = true; }];
         }).config.system.build.sovoxRaw;
-        sovoxd-stub = pkgs.callPackage ./packages/sovoxd-stub { };
-        default = self.packages.${system}.sovoxd-stub;
+        sovoxd = pkgs.callPackage ./packages/sovoxd { };
+        # Transitional alias for the pre-rename package name; drop after v0.0.x.
+        sovoxd-stub = self.packages.${system}.sovoxd;
+        default = self.packages.${system}.sovoxd;
       };
 
       apps.${system}.install = {

@@ -1,10 +1,10 @@
 [package]
-name = "sovoxd-stub"
-version = "0.0.1"
+name = "sovoxd"
+version = "0.0.2"
 edition = "2024"
 rust-version = "1.85" # Arch §3 toolchain floor
 license = "Apache-2.0"
-description = "Sovox health/version stub daemon — the seed of the sovoxd health supervisor (Arch §4.5)"
+description = "Sovox node daemon — health gate, node status, and intent introspection over a local Unix socket (Arch §4.5)"
 
 # Deliberately dependency-free (std only): the handwritten Cargo.lock stays
 # trivial and buildRustPackage needs no network or vendored hashes.

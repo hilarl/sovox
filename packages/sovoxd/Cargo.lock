@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "sovoxd-stub"
-version = "0.0.1"
+name = "sovoxd"
+version = "0.0.2"

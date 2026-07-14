@@ -21,9 +21,9 @@ let
         == desktopCfg.networking.nftables.tables.sovox.content)
       "editions diverge: nftables firewall policy differs";
     assert lib.assertMsg
-      (serverCfg.systemd.units."sovoxd-stub.service".unit.outPath
-        == desktopCfg.systemd.units."sovoxd-stub.service".unit.outPath)
-      "editions diverge: sovoxd-stub unit differs";
+      (serverCfg.systemd.units."sovoxd.service".unit.outPath
+        == desktopCfg.systemd.units."sovoxd.service".unit.outPath)
+      "editions diverge: sovoxd unit differs";
     assert lib.assertMsg
       (serverCfg.systemd.units."sovox-health-check.service".unit.outPath
         == desktopCfg.systemd.units."sovox-health-check.service".unit.outPath)
@@ -56,7 +56,7 @@ runTest ({ pkgs, ... }: {
   testScript = ''
     machine.start()
     machine.wait_for_unit("multi-user.target")
-    machine.wait_for_unit("sovoxd-stub.service")
+    machine.wait_for_unit("sovoxd.service")
 
     ruleset_before = machine.succeed("nft list ruleset")
 
@@ -67,12 +67,12 @@ runTest ({ pkgs, ... }: {
         machine.wait_for_unit("display-manager.service")
 
     with subtest("sovereign core unchanged by the conversion"):
-        machine.succeed("systemctl is-active sovoxd-stub.service")
+        machine.succeed("systemctl is-active sovoxd.service")
         ruleset_after = machine.succeed("nft list ruleset")
         assert ruleset_before == ruleset_after, "firewall changed across edition switch"
 
     with subtest("desktop → server activates back"):
         machine.succeed("/run/current-system/bin/switch-to-configuration test >&2")
-        machine.succeed("systemctl is-active sovoxd-stub.service")
+        machine.succeed("systemctl is-active sovoxd.service")
   '';
 })

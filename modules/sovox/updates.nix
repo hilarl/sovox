@@ -11,8 +11,9 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.sovox.updates;
-  sovoxd-stub = pkgs.callPackage ../../packages/sovoxd-stub { };
+  sovoxd = pkgs.callPackage ../../packages/sovoxd { };
   socketPath = "/run/sovoxd/sovoxd.sock";
+  configPath = "/etc/sovox/sovox.toml";
 in
 {
   options.sovox.updates = {
@@ -61,12 +62,15 @@ in
     # healthy system activates it and the watchdog can trust its absence.
     systemd.targets.boot-complete.wantedBy = [ "multi-user.target" ];
 
-    # ── sovoxd-stub: the seed of the sovoxd health supervisor (Arch §4.5) ──
-    systemd.services.sovoxd-stub = {
-      description = "Sovox health/version stub daemon";
+    # ── sovoxd: health gate, node status, intent introspection (Arch §4.5) ─
+    systemd.services.sovoxd = {
+      description = "Sovox node daemon";
       wantedBy = [ "multi-user.target" ];
+      # A staged generation swaps the rendered intent file; the daemon re-reads
+      # it per request, but restart on switch keeps /status uptime honest.
+      restartTriggers = [ config.environment.etc."sovox/sovox.toml".source or null ];
       serviceConfig = {
-        ExecStart = "${sovoxd-stub}/bin/sovoxd-stub --socket ${socketPath}";
+        ExecStart = "${sovoxd}/bin/sovoxd --socket ${socketPath} --config ${configPath}";
         RuntimeDirectory = "sovoxd";
         RuntimeDirectoryMode = "0755";
         Restart = "on-failure";
@@ -92,8 +96,8 @@ in
     # ── The gate. Success units use RequiredBy=boot-complete.target ────────
     systemd.services.sovox-health-check = {
       description = "Sovox boot health gate";
-      requires = [ "sovoxd-stub.service" ];
-      after = [ "sovoxd-stub.service" "multi-user.target" ]
+      requires = [ "sovoxd.service" ];
+      after = [ "sovoxd.service" "multi-user.target" ]
         ++ lib.optional cfg.checkClock "chronyd.service";
       requiredBy = [ "boot-complete.target" ];
       before = [ "boot-complete.target" "sovox-healthy.target" ];
