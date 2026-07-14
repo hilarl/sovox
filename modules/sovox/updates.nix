@@ -70,9 +70,11 @@ in
     systemd.services.sovoxd = {
       description = "Sovox node daemon";
       wantedBy = [ "multi-user.target" ];
-      # A staged generation swaps the rendered intent file; the daemon re-reads
-      # it per request, but restart on switch keeps /status uptime honest.
-      restartTriggers = [ config.environment.etc."sovox/sovox.toml".source ];
+      # Deliberately NO restartTriggers on the rendered intent file: the
+      # daemon re-reads it per request, so a swapped generation is picked up
+      # live — and referencing the edition-bearing file from the unit would
+      # break the cross-edition parity invariant (tests/edition-switch.nix:
+      # the sovoxd unit must be the identical derivation in both editions).
       serviceConfig = {
         ExecStart = "${sovoxd}/bin/sovoxd --socket ${socketPath} --config ${configPath}";
         RuntimeDirectory = "sovoxd";
