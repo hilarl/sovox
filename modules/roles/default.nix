@@ -1,6 +1,11 @@
-# Role stubs: typed options mirroring the sovox.toml [roles] schema
-# (Operator Docs §3) with no logic. Role implementations are v0.1 sovoxd work;
-# enabling any role in the prototype fails at evaluation.
+# Roles: typed options mirroring the sovox.toml [roles] schema (Operator
+# Docs §3). `sovox.roles.enabled` is the canonical list; each per-role
+# `enable` defaults from membership in it, and the two must agree.
+#
+# Enabled roles render into /etc/sovox/sovox.toml and into the tenzro-node
+# unit's --roles flags (modules/tenzro). Until tenzro-node is pinned to a
+# real upstream release, that is declaration without execution — hence the
+# warning below, not an error.
 { config, lib, ... }:
 let
   cfg = config.sovox.roles;
@@ -18,11 +23,38 @@ let
     "agent-hub"
   ];
 
+  inEnabled = role: lib.elem role cfg.enabled;
+
   mkRoleEnable = role: lib.mkOption {
     type = lib.types.bool;
     default = false;
-    description = "Enable the ${role} role (v0.1; forbidden in the prototype).";
+    description = "Enable the ${role} role. Defaults from membership in sovox.roles.enabled.";
   };
+
+  # Per-role enable option ↔ its canonical name in the enabled list.
+  roleEnables = {
+    validator = cfg.validator.enable;
+    ai = cfg.ai.enable;
+    storage = cfg.storage.enable;
+    "tee-provider" = cfg.tee.enable;
+    web = cfg.web.enable;
+    email = cfg.email.enable;
+    "agent-hub" = cfg.agent-hub.enable;
+  };
+
+  # What each per-role enable should be, given the enabled list. "ai.serve"
+  # and "ai.train" are capabilities of the ai role, so either implies it.
+  expectedEnable = {
+    validator = inEnabled "validator";
+    ai = inEnabled "ai" || inEnabled "ai.serve" || inEnabled "ai.train";
+    storage = inEnabled "storage";
+    "tee-provider" = inEnabled "tee-provider";
+    web = inEnabled "web";
+    email = inEnabled "email";
+    "agent-hub" = inEnabled "agent-hub";
+  };
+
+  inconsistent = lib.filterAttrs (name: enabled: enabled != expectedEnable.${name}) roleEnables;
 in
 {
   options.sovox.roles = {
@@ -141,12 +173,38 @@ in
     };
   };
 
-  config.assertions = [{
-    assertion =
-      cfg.enabled == [ ]
-      && !cfg.ai.enable && !cfg.storage.enable && !cfg.validator.enable
-      && !cfg.tee.enable && !cfg.web.enable && !cfg.email.enable
-      && !cfg.agent-hub.enable;
-    message = "sovox.roles.*: roles land in v0.1; the prototype forbids enabling them.";
-  }];
+  config = {
+    # enabled list → per-role enable defaults. "ai.serve"/"ai.train" imply
+    # the ai role with the matching capability switched on.
+    sovox.roles = {
+      validator.enable = lib.mkDefault (inEnabled "validator");
+      ai.enable = lib.mkDefault (inEnabled "ai" || inEnabled "ai.serve" || inEnabled "ai.train");
+      ai.serve = lib.mkDefault (inEnabled "ai.serve");
+      ai.train = lib.mkDefault (inEnabled "ai.train");
+      storage.enable = lib.mkDefault (inEnabled "storage");
+      tee.enable = lib.mkDefault (inEnabled "tee-provider");
+      web.enable = lib.mkDefault (inEnabled "web");
+      email.enable = lib.mkDefault (inEnabled "email");
+      agent-hub.enable = lib.mkDefault (inEnabled "agent-hub");
+    };
+
+    assertions = [{
+      assertion = inconsistent == { };
+      message = ''
+        sovox.roles: per-role enable disagrees with sovox.roles.enabled for:
+        ${lib.concatStringsSep ", " (lib.attrNames inconsistent)}.
+        Declare roles in sovox.roles.enabled; the per-role enable follows.
+      '';
+    }];
+
+    # No node binary runs these roles yet: tenzro-node has no upstream
+    # release to pin (modules/tenzro/package.nix). Declaring roles is still
+    # meaningful — they render into the intent file and the unit definition —
+    # but it must not pass silently as if the node were earning.
+    warnings = lib.optional (cfg.enabled != [ ] && !config.sovox.tenzro.enable)
+      ("sovox.roles: [" + lib.concatStringsSep ", " cfg.enabled + "] declared "
+        + "but sovox.tenzro.enable is false — roles render into "
+        + "/etc/sovox/sovox.toml and the tenzro-node unit, and start running "
+        + "once tenzro-node is pinned and enabled.");
+  };
 }
