@@ -24,6 +24,11 @@ runTest ({ lib, pkgs, ... }: {
     sovox.internal.impermanence.enable = true;
     sovox.updates.healthGrace = 3600; # watchdog must not fire mid-test
 
+    # QEMU virtio disks have no /dev/disk/by-id symlinks, so the default
+    # devNodes scan finds no pool ("cannot import 'rpool': no such pool
+    # available"). Scan by-uuid instead, as nixpkgs' own ZFS tests do.
+    boot.zfs.devNodes = "/dev/disk/by-uuid";
+
     virtualisation = {
       # No prebuilt root image: the pool below is the root.
       diskImage = null;
